@@ -1,1 +1,1 @@
-# Procesamiento_Digital_De_imagenes
+# Procesamiento Digital De imagenes
