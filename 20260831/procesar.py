@@ -4,88 +4,65 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import salida
+import lectura
 from readers import imagen_2d, satelital
 
 
-EXT_IMAGEN = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
+# ---------------------------------------------------------------------------
+# Operaciones de procesamiento
+# ---------------------------------------------------------------------------
 
-
-def _submuestrear_espacial(arr, factor):
-    if factor <= 1:
-        return arr
-    f = int(factor)
-    return arr[::f, ::f]
-
-
-def _reducir_radiometria(arr, bits_nuevos):
-    if np.issubdtype(arr.dtype, np.integer):
-        info = np.iinfo(arr.dtype)
-        vmin_in, vmax_in = 0.0, float(info.max)
-        vmin_out, vmax_out = 0.0, float(max(1, info.max))
+def _reducir_radiometria(arr, bits):
+    """Cuantiza los valores a `2^bits` niveles y los re-expande al rango
+    completo, de modo que la imagen se posteriza pero no se oscurece."""
+    dtype = arr.dtype
+    if np.issubdtype(dtype, np.integer):
+        minimo, maximo = 0.0, float(np.iinfo(dtype).max)
     else:
-        vmin_in = float(np.nanmin(arr))
-        vmax_in = float(np.nanmax(arr))
-        if vmax_in == vmin_in:
-            vmax_in = vmin_in + 1.0
-        vmin_out, vmax_out = vmin_in, vmax_in
+        minimo = float(np.nanmin(arr))
+        maximo = float(np.nanmax(arr))
+        if maximo == minimo:
+            maximo = minimo + 1.0
 
-    bits_act = arr.dtype.itemsize * 8 if np.issubdtype(arr.dtype, np.integer) else 64
-    if bits_nuevos >= bits_act:
+    if bits >= (dtype.itemsize * 8 if np.issubdtype(dtype, np.integer) else 64):
         return arr
 
-    niveles_out = (1 << bits_nuevos) - 1
-    norm = (arr.astype("float64") - vmin_in) / (vmax_in - vmin_in)
-    cuant = np.round(norm * niveles_out)
-    desnormal = cuant / niveles_out * (vmax_out - vmin_out) + vmin_out
-
-    if np.issubdtype(arr.dtype, np.integer):
-        out = np.clip(np.round(desnormal), np.iinfo(arr.dtype).min,
-                      np.iinfo(arr.dtype).max).astype(arr.dtype)
-    else:
-        out = desnormal.astype(arr.dtype)
-    return out
-
-
-def procesar(ruta, factor=1, bits=None, salida_ruta=None):
-    ext = os.path.splitext(ruta)[1].lower()
-
-    if ext in {".tif", ".tiff"} and satelital.es_geotiff(ruta):
-        return _procesar_satelital(ruta, factor, bits, salida_ruta)
-    return _procesar_2d(ruta, factor, bits, salida_ruta)
+    niveles = (1 << bits) - 1
+    normalizado = (arr.astype("float64") - minimo) / (maximo - minimo)
+    cuantizado = np.round(normalizado * niveles) / niveles
+    reexpandido = cuantizado * (maximo - minimo) + minimo
+    if np.issubdtype(dtype, np.integer):
+        return np.clip(np.round(reexpandido), np.iinfo(dtype).min,
+                       np.iinfo(dtype).max).astype(dtype)
+    return reexpandido.astype(dtype)
 
 
 def _normalizar_color(imagen):
-    modo = imagen.mode
-    if modo in ("L", "1", "I", "I;16", "I;16L", "I;16B", "F"):
+    """Convierte a RGB/RGBA las imágenes de color pero deja intactas las de grises."""
+    grises = {"L", "1", "I", "I;16", "I;16L", "I;16B", "F"}
+    if imagen.mode in grises:
         return imagen
-    if modo == "P":
-        if "transparency" in imagen.info:
-            return imagen.convert("RGBA")
-        return imagen.convert("RGB")
-    if modo in ("RGBA", "LA", "PA"):
+    if imagen.mode in {"RGBA", "LA", "PA"} or imagen.mode == "P" and "transparency" in imagen.info:
         return imagen.convert("RGBA")
     return imagen.convert("RGB")
 
 
+# ---------------------------------------------------------------------------
+# Procesado por tipo de imagen
+# ---------------------------------------------------------------------------
+
 def _procesar_2d(ruta, factor, bits, salida_ruta):
     from PIL import Image
 
-    imagen = Image.open(ruta)
-    imagen = _normalizar_color(imagen)
-    arr = np.asarray(imagen)
-
+    imagen = _normalizar_color(Image.open(ruta))
     if factor > 1:
-        arr = _submuestrear_espacial(arr, factor)
-
+        imagen = imagen.reduce(factor)
     if bits is not None:
-        arr = _reducir_radiometria(arr, bits)
+        arr = _reducir_radiometria(np.asarray(imagen), bits)
+        imagen = Image.fromarray(arr)
+    imagen.save(salida_ruta)
 
-    salida_img = Image.fromarray(arr)
-    salida_img.save(salida_ruta)
-    return _resumen_2d(ruta, imagen.size, arr, factor, bits)
+    return _resumen(ruta, imagen.size, factor, bits, canales=len(imagen.getbands()))
 
 
 def _procesar_satelital(ruta, factor, bits, salida_ruta):
@@ -94,15 +71,13 @@ def _procesar_satelital(ruta, factor, bits, salida_ruta):
 
     with rasterio.open(ruta) as src:
         arr = src.read()
-        transform = src.transform
-        crs = src.crs
+        transform, crs = src.transform, src.crs
 
     if factor > 1:
         f = int(factor)
         arr = arr[:, ::f, ::f]
         transform = Affine(transform.a * f, transform.b, transform.c,
                            transform.d, transform.e * f, transform.f)
-
     if bits is not None:
         arr = _reducir_radiometria(arr, bits)
 
@@ -113,67 +88,68 @@ def _procesar_satelital(ruta, factor, bits, salida_ruta):
         crs=crs, transform=transform,
     ) as dst:
         dst.write(arr)
-    return _resumen_satelital(ruta, arr, factor, bits)
+
+    return _resumen(ruta, (arr.shape[2], arr.shape[1]), factor, bits, bandas=arr.shape[0])
 
 
-def _resumen_2d(ruta, orig, arr, factor, bits):
-    return {
-        "Archivo origen": ruta,
-        "Tamaño original": f"{orig[0]} x {orig[1]} px",
-        "Factor de submuestreo espacial": factor,
-        "Tamaño resultante": f"{arr.shape[1]} x {arr.shape[0]} px",
-        "Bits por muestra (radiometría)": None if bits is None else bits,
-        "dtype resultante": arr.dtype.name,
-    }
-
-
-def _resumen_satelital(ruta, arr, factor, bits):
+def _resumen(ruta, tamano, factor, bits, canales=None, bandas=None):
     return {
         "Archivo origen": ruta,
         "Factor de submuestreo espacial": factor,
-        "Tamaño resultante": f"{arr.shape[2]} x {arr.shape[1]} px",
-        "Bandas": arr.shape[0],
-        "Bits por muestra (radiometría)": None if bits is None else bits,
-        "dtype resultante": arr.dtype.name,
+        "Tamaño resultante": f"{tamano[0]} x {tamano[1]} px",
+        "Bits por muestra": None if bits is None else bits,
+        "Canales": canales,
+        "Bandas": bandas,
+        "dtype resultante": None,
     }
+
+
+def procesar(ruta, factor=1, bits=None, salida_ruta=None):
+    if lectura.es_geotiff_por_extension(ruta) and satelital.es_geotiff(ruta):
+        return _procesar_satelital(ruta, factor, bits, salida_ruta)
+    return _procesar_2d(ruta, factor, bits, salida_ruta)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def _error(mensaje):
+    print(f"Error: {mensaje}", file=sys.stderr)
+    sys.exit(1)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Procesa una imagen: sub-muestreo espacial y/o reducción de resolución radiométrica."
+        description="Sub-muestrea espacialmente y/o reduce la resolución radiométrica de una imagen."
     )
     parser.add_argument("imagen", help="Ruta del archivo de imagen de entrada")
-    parser.add_argument("-o", "--salida", default=None, help="Ruta del archivo de salida (por defecto: <nombre>_proc.<ext>)")
-    parser.add_argument("-f", "--factor", type=int, default=1, help="Factor de sub-muestreo espacial (>=1; 1 = sin cambio)")
+    parser.add_argument("-o", "--salida", default=None,
+                        help="Ruta de salida (por defecto: salida/<nombre>_proc.<ext>)")
+    parser.add_argument("-f", "--factor", type=int, default=1,
+                        help="Factor de sub-muestreo espacial (>=1)")
     parser.add_argument("-b", "--bits", type=int, default=None,
-                        help="Nueva resolución radiométrica en bits/muestra (p.ej. 4, 6, 1)")
+                        help="Nueva resolución radiométrica en bits/muestra (p.ej. 4, 1)")
     args = parser.parse_args()
 
-    if not os.path.isfile(args.imagen):
-        candidata = os.path.join("entrada", args.imagen)
-        if os.path.isfile(candidata):
-            args.imagen = candidata
-        else:
-            print(f"Error: el archivo no existe -> {args.imagen}", file=sys.stderr)
-            sys.exit(1)
+    entrada = lectura.resolver_entrada(args.imagen)
+    if entrada is None:
+        _error(f"el archivo no existe: {args.imagen}")
     if args.factor < 1:
-        print("Error: el factor debe ser >= 1", file=sys.stderr)
-        sys.exit(1)
+        _error("el factor debe ser >= 1")
     if args.bits is not None and args.bits < 1:
-        print("Error: los bits deben ser >= 1", file=sys.stderr)
-        sys.exit(1)
+        _error("los bits deben ser >= 1")
 
-    ext = os.path.splitext(args.imagen)[1] or ".png"
+    ext = os.path.splitext(entrada)[1] or ".png"
     os.makedirs("salida", exist_ok=True)
-    salida_ruta = (
-        args.salida
-        or os.path.join("salida", f"{os.path.basename(os.path.splitext(args.imagen)[0])}_proc{ext}")
-    )
+    base = os.path.basename(os.path.splitext(entrada)[0])
+    salida_ruta = args.salida or os.path.join("salida", f"{base}_proc{ext}")
 
-    resumen = procesar(args.imagen, args.factor, args.bits, salida_ruta)
+    resumen = procesar(entrada, args.factor, args.bits, salida_ruta)
     print(f"Imagen procesada guardada en: {salida_ruta}")
-    for k, v in resumen.items():
-        print(f"  {k}: {v}")
+    for clave, valor in resumen.items():
+        if valor is not None:
+            print(f"  {clave}: {valor}")
 
 
 if __name__ == "__main__":

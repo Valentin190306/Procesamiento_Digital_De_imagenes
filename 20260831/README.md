@@ -9,6 +9,17 @@ Hay dos carpetas:
 La ruta de un archivo se puede dar completa o relativa a `entrada/`, p. ej.
 `python extractor.py ejemplo.png` usa `entrada/ejemplo.png`.
 
+## Estructura
+
+- `extractor.py` : extrae los datos de una imagen.
+- `procesar.py` : sub-muestrea y/o reduce la resolución radiométrica.
+- `lectura.py` : utilidades compartidas (detección de formato y resolución de `entrada/`).
+- `readers/` : lectores por tipo (`imagen_2d.py` con Pillow, `satelital.py` con rasterio).
+- `salida.py` : formateo de resultados (tabla / JSON).
+
+El sub-muestreo espacial usa la API nativa de Pillow `Image.reduce(factor)`, y la
+cuantización radiométrica se aplica con numpy (normaliza → cuantiza → re-expande).
+
 ## Extractor de datos de imagen
 
 Extrae de una **imagen** los siguientes datos:
