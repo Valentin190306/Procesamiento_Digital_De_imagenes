@@ -5,7 +5,6 @@ import sys
 import numpy as np
 
 import lectura
-from readers import imagen_2d, satelital
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +47,7 @@ def _normalizar_color(imagen):
 
 
 # ---------------------------------------------------------------------------
-# Procesado por tipo de imagen
+# Procesado
 # ---------------------------------------------------------------------------
 
 def _procesar_2d(ruta, factor, bits, salida_ruta):
@@ -62,51 +61,19 @@ def _procesar_2d(ruta, factor, bits, salida_ruta):
         imagen = Image.fromarray(arr)
     imagen.save(salida_ruta)
 
-    return _resumen(ruta, imagen.size, factor, bits, canales=len(imagen.getbands()))
+    return _resumen(ruta, imagen.size, factor, bits)
 
 
-def _procesar_satelital(ruta, factor, bits, salida_ruta):
-    import rasterio
-    from rasterio.transform import Affine
-
-    with rasterio.open(ruta) as src:
-        arr = src.read()
-        transform, crs = src.transform, src.crs
-
-    if factor > 1:
-        f = int(factor)
-        arr = arr[:, ::f, ::f]
-        transform = Affine(transform.a * f, transform.b, transform.c,
-                           transform.d, transform.e * f, transform.f)
-    if bits is not None:
-        arr = _reducir_radiometria(arr, bits)
-
-    with rasterio.open(
-        salida_ruta, "w", driver="GTiff",
-        height=arr.shape[1], width=arr.shape[2],
-        count=arr.shape[0], dtype=arr.dtype.name,
-        crs=crs, transform=transform,
-    ) as dst:
-        dst.write(arr)
-
-    return _resumen(ruta, (arr.shape[2], arr.shape[1]), factor, bits, bandas=arr.shape[0])
-
-
-def _resumen(ruta, tamano, factor, bits, canales=None, bandas=None):
+def _resumen(ruta, tamano, factor, bits):
     return {
         "Archivo origen": ruta,
         "Factor de submuestreo espacial": factor,
         "Tamaño resultante": f"{tamano[0]} x {tamano[1]} px",
         "Bits por muestra": None if bits is None else bits,
-        "Canales": canales,
-        "Bandas": bandas,
-        "dtype resultante": None,
     }
 
 
 def procesar(ruta, factor=1, bits=None, salida_ruta=None):
-    if lectura.es_geotiff_por_extension(ruta) and satelital.es_geotiff(ruta):
-        return _procesar_satelital(ruta, factor, bits, salida_ruta)
     return _procesar_2d(ruta, factor, bits, salida_ruta)
 
 

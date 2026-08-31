@@ -2,15 +2,13 @@ import argparse
 import sys
 
 import lectura
-from readers import imagen_2d, satelital
+from readers import imagen_2d
 from salida import a_json, a_tabla
 
 
 def detectar_y_leer(ruta):
     if not lectura.es_imagen(ruta):
         return None, f"Formato no soportado: {lectura.extension(ruta) or '(sin extensión)'}"
-    if lectura.es_geotiff_por_extension(ruta) and satelital.es_geotiff(ruta):
-        return satelital.leer(ruta), None
     try:
         return imagen_2d.leer(ruta), None
     except Exception as e:

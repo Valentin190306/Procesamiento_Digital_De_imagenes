@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -14,10 +14,6 @@ class DatosImagen:
     paleta: Optional[bool] = None
     dpi: Optional[tuple] = None
     fecha_captura: Optional[str] = None
-    gsd_metros: Optional[float] = None
-    tamanio_pixel: Optional[str] = None
-    bandas: Optional[int] = None
-    dtype: Optional[str] = None
     rango_dinamico: Optional[str] = None
     res_temporal: str = "N/A"
     nota_muestreo: Optional[str] = None

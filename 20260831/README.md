@@ -14,7 +14,7 @@ La ruta de un archivo se puede dar completa o relativa a `entrada/`, p. ej.
 - `extractor.py` : extrae los datos de una imagen.
 - `procesar.py` : sub-muestrea y/o reduce la resolución radiométrica.
 - `lectura.py` : utilidades compartidas (detección de formato y resolución de `entrada/`).
-- `readers/` : lectores por tipo (`imagen_2d.py` con Pillow, `satelital.py` con rasterio).
+- `readers/` : lector de imágenes 2D (`imagen_2d.py` con Pillow).
 - `salida.py` : formateo de resultados (tabla / JSON).
 
 El sub-muestreo espacial usa la API nativa de Pillow `Image.reduce(factor)`, y la
@@ -25,9 +25,9 @@ cuantización radiométrica se aplica con numpy (normaliza → cuantiza → re-e
 Extrae de una **imagen** los siguientes datos:
 
 - **Muestreo**: matriz de píxeles (ancho x alto) y bits por muestra.
-- **Resolución espacial**: píxeles, DPI y —para GeoTIFF— tamaño de píxel / GSD (m/píxel).
+- **Resolución espacial**: píxeles y DPI.
 - **Resolución temporal**: `N/A` para una imagen estática (solo aplicable a video o secuencias).
-- **Resolución radiométrica**: bits/muestra, niveles, nº de bandas y rango dinámico.
+- **Resolución radiométrica**: bits/muestra y niveles.
 
 ## Instalación
 
@@ -44,8 +44,8 @@ pip install -r requirements.txt
 # Imagen 2D
 python extractor.py ejemplo.png
 
-# GeoTIFF (satelital) con DPI / GSD
-python extractor.py --json ejemplo_satelital.tif
+# Salida en JSON
+python extractor.py --json ejemplo.png
 ```
 
 - Salida por defecto en tabla; con `--json` en formato JSON.
@@ -64,19 +64,11 @@ Ejemplos:
 ```bash
 python procesar.py ejemplo.png -f 2            # imagen a la mitad
 python procesar.py ejemplo.png -f 3 -b 4       # submuestreo x3 + 4 bits
-python procesar.py ejemplo_satelital.tif -f 2  # GeoTIFF: actualiza GSD
 ```
-
-Para **GeoTIFF** se preserva la georreferenciación y la transformada se recalcula
-según el factor (el GSD queda multiplicado por `f`), por lo que el resultado se
-puede inspeccionar con `extractor.py`.
 
 ## Tipos soportados
 
-- **Imagen 2D** (`jpg`, `png`, `bmp`, `gif`, `webp`, …): usa Pillow.
-- **GeoTIFF / satelital** (`tif`, `tiff` con geodatos): usa rasterio (leer GSD, bandas, rango).
-
-La selección del lector es automática (extensión + presencia de geodatos).
+Imagenes 2D (`jpg`, `png`, `bmp`, `gif`, `webp`, …) usando Pillow.
 
 ## Nota sobre resolución temporal
 

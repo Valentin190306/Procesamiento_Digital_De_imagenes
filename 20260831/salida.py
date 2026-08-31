@@ -1,4 +1,3 @@
-from dataclasses import asdict
 import json
 
 
@@ -31,10 +30,6 @@ def _espacial(d):
         celdas.append(f"{d.ancho} x {d.alto} px")
     if d.dpi:
         celdas.append(f"DPI: {d.dpi[0]} x {d.dpi[1]}")
-    if d.tamanio_pixel:
-        celdas.append(f"Píxel: {d.tamanio_pixel}")
-    if d.gsd_metros is not None:
-        celdas.append(f"GSD: {d.gsd_metros:.4f} m/píxel")
     return "; ".join(celdas) if celdas else "No disponible"
 
 
@@ -43,10 +38,6 @@ def _radiometrica(d):
     if d.bits_por_muestra:
         niveles = 2 ** min(d.bits_por_muestra, 32)
         celdas.append(f"{d.bits_por_muestra} bits/muestra ({niveles} niveles)")
-    if d.bandas:
-        celdas.append(f"{d.bandas} banda(s)")
-    if d.dtype:
-        celdas.append(f"tipo: {d.dtype}")
     if d.rango_dinamico:
         celdas.append(f"rango: {d.rango_dinamico}")
     return "; ".join(celdas) if celdas else "No disponible"
