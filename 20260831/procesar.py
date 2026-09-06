@@ -26,10 +26,15 @@ def _reducir_radiometria(arr, bits):
     if bits >= (dtype.itemsize * 8 if np.issubdtype(dtype, np.integer) else 64):
         return arr
 
-    niveles = (1 << bits) - 1
+    # Cantidad de niveles a los que se cuantiza la imagen. Por ejemplo, para 4 bits
+    niveles = (1 << bits) - 1 
+
+    # Normaliza los valores a [0, 1], cuantiza a `niveles` y re-expande al rango original
     normalizado = (arr.astype("float64") - minimo) / (maximo - minimo)
     cuantizado = np.round(normalizado * niveles) / niveles
+
     reexpandido = cuantizado * (maximo - minimo) + minimo
+
     if np.issubdtype(dtype, np.integer):
         return np.clip(np.round(reexpandido), np.iinfo(dtype).min,
                        np.iinfo(dtype).max).astype(dtype)
